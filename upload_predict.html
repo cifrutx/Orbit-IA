@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Subir datos — ASTRALIS</title>
+  <style>
+    body{font-family:Inter,Arial;background:linear-gradient(180deg,#071026,#071933);color:#e6eef6;margin:0;padding:18px}
+    .card{max-width:1100px;margin:18px auto;background:rgba(255,255,255,0.02);padding:18px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+    label{font-weight:700;color:#ffd7d7}
+    input,textarea,select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:#071026;color:#e6eef6}
+    .row{display:flex;gap:10px;margin-top:8px}
+    .btn{background:#f6b24a;color:#071026;border:none;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:800}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,0.04);color:#9aa6b2}
+    pre{background:#0b1220;padding:10px;border-radius:8px;color:#9be7d6;max-height:360px;overflow:auto}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2 style="margin:0 0 8px 0">Subir datos y predecir</h2>
+    <p style="color:#9aa6b2">Sube un CSV con encabezado o pega JSON (un objeto o lista). Selecciona modelo y pulsa Predecir.</p>
+
+    <label>Modelo:</label>
+    <select id="modelSelect">
+      <option>RF - TESS (base)</option>
+      <option>RF - K2</option>
+      <option>RF - TASS</option>
+    </select>
+
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <div style="flex:1">
+        <label>Subir CSV:</label>
+        <input id="csvFile" type="file" accept=".csv">
+        <button id="previewCsvBtn" class="btn" style="margin-top:8px">Previsualizar CSV</button>
+      </div>
+      <div style="flex:1">
+        <label>Pegar JSON (una fila o lista):</label>
+        <textarea id="jsonInput" rows="6">{ "pl_eqt": 250.78, "pl_insol": 1.23 }</textarea>
+        <button id="predictJsonBtn" class="btn" style="margin-top:8px">Predecir JSON pegado</button>
+      </div>
+    </div>
+
+    <h3 style="margin-top:16px">Preview CSV:</h3>
+    <div id="csvPreview"></div>
+
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="predictCsvBtn" class="btn">Predecir CSV subido</button>
+      <button id="downloadPredBtn" class="btn" style="display:none">Descargar resultados (CSV)</button>
+      <a href="index.html" style="margin-left:auto;color:#9ad1ff;text-decoration:none">Volver</a>
+    </div>
+
+    <h3 style="margin-top:16px">Resultados:</h3>
+    <div id="resultArea"><pre id="resultJSON">—</pre></div>
+  </div>
+
+<script>
+  // parser CSV simple (como antes)
+  function parseCSV(text){
+    const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+    if (!lines.length) return {cols:[], rows:[]};
+    const cols = lines[0].split(',').map(c=>c.trim().replace(/^["']|["']$/g,''));
+    const rows = lines.slice(1).map(l => {
+      const parts = l.split(',').map(p=>p.trim().replace(/^["']|["']$/g,''));
+      const obj = {};
+      cols.forEach((c,i)=> {
+        const v = parts[i] ?? '';
+        const n = parseFloat(v);
+        obj[c] = (v !== '' && !isNaN(n)) ? n : (v === '' ? null : v);
+      });
+      return obj;
+    });
+    return {cols, rows};
+  }
+
+  document.getElementById('previewCsvBtn').addEventListener('click', async ()=>{
+    const f = document.getElementById('csvFile').files[0];
+    const preview = document.getElementById('csvPreview');
+    preview.innerHTML = '';
+    if (!f) { preview.textContent = 'Selecciona un CSV primero.'; return; }
+    const txt = await f.text();
+    const {cols, rows} = parseCSV(txt);
+    if (!cols.length) { preview.textContent='CSV vacío o inválido.'; return; }
+    let html = '<table><thead><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+    rows.slice(0,20).forEach(r => html += '<tr>' + cols.map(c=>`<td>${String(r[c] ?? '')}</td>`).join('') + '</tr>');
+    html += '</tbody></table>';
+    preview.innerHTML = html;
+    // store parsed for predict
+    window.lastParsedCSV = rows;
+  });
+
+  // Helpers predict (mismos endpoints locales)
+  async function tryPredict(body){
+    // intentamos el proxy flask primero
+    const candidates = ['http://127.0.0.1:5000/predict','http://localhost:5000/predict','/predict',location.origin + '/predict'];
+    for (const u of candidates){
+      try {
+        const r = await fetch(u, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+        const text = await r.text();
+        try { return { url:u, json: JSON.parse(text) }; }
+        catch { continue; }
+      } catch(e){ continue; }
+    }
+    throw new Error('Ningún endpoint predict respondió correctamente (revisa server.py).');
+  }
+
+  // Predecir CSV subido
+  document.getElementById('predictCsvBtn').addEventListener('click', async ()=>{
+    const rows = window.lastParsedCSV;
+    const out = document.getElementById('resultJSON');
+    out.textContent = 'Solicitando...';
+    if (!rows || !rows.length) { out.textContent = 'Primero previsualiza el CSV.'; return; }
+    const model = document.getElementById('modelSelect').value;
+    try {
+      const res = await tryPredict({ model_label: model, data: rows });
+      out.textContent = `Respuesta desde: ${res.url}\n\n` + JSON.stringify(res.json, null, 2);
+      // si hay prediction array, habilitar descarga CSV con las predicciones
+      if (res.json && res.json.prediction) {
+        const preds = res.json.prediction;
+        const probs = res.json.probabilities || [];
+        const cols = Object.keys(rows[0]);
+        const csvRows = [ [...cols, 'prediction', 'probabilities'].join(',') ];
+        for (let i=0;i<rows.length;i++){
+          const r = rows[i];
+          const vals = cols.map(c => JSON.stringify(r[c] ?? ''));
+          vals.push(JSON.stringify(preds[i] ?? ''));
+          vals.push(JSON.stringify(probs[i] ?? ''));
+          csvRows.push(vals.join(','));
+        }
+        const blob = new Blob([csvRows.join('\n')], {type:'text/csv'});
+        const url = URL.createObjectURL(blob);
+        const dl = document.getElementById('downloadPredBtn');
+        dl.style.display = 'inline-block';
+        dl.onclick = ()=> { const a=document.createElement('a'); a.href=url; a.download='predictions.csv'; a.click(); };
+      }
+    } catch(e) {
+      out.textContent = 'Error: ' + (e.message || e);
+    }
+  });
+
+  // Predecir JSON pegado
+  document.getElementById('predictJsonBtn').addEventListener('click', async ()=>{
+    const raw = document.getElementById('jsonInput').value;
+    const out = document.getElementById('resultJSON');
+    out.textContent = 'Solicitando...';
+    try {
+      const parsed = JSON.parse(raw);
+      const model = document.getElementById('modelSelect').value;
+      const res = await tryPredict({ model_label: model, data: parsed });
+      out.textContent = `Respuesta desde: ${res.url}\n\n` + JSON.stringify(res.json, null, 2);
+    } catch(e) {
+      out.textContent = 'Error: ' + (e.message || e);
+    }
+  });
+
+  window.addEventListener('load', ()=>{
+    const model = localStorage.getItem('selectedModelLabel');
+    if (model) document.getElementById('modelSelect').value = model;
+  });
+</script>
+</body>
+</html>

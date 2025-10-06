@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Selector — ASTRALIS</title>
+  <style>
+    body{font-family:Inter,Arial,Helvetica;background:linear-gradient(180deg,#071026,#071933);color:#e6eef6;margin:0;display:flex;align-items:center;justify-content:center;height:100vh}
+    .wrap{max-width:1100px;width:100%;padding:28px}
+    header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+    #logo{width:68px;height:68px;background:rgba(255,255,255,0.03);border-radius:12px;padding:8px}
+    h1{margin:0;font-size:22px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    .card{background:rgba(255,255,255,0.03);padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.04)}
+    .card h3{margin:0 0 8px 0}
+    .btn{background:#f6b24a;color:#071026;padding:10px 14px;border-radius:10px;border:none;cursor:pointer;font-weight:800}
+    .sub{margin-top:14px;color:#9aa6b2;font-size:14px}
+    footer{margin-top:18px;color:#9aa6b2;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+    a.link{color:#9ad1ff;text-decoration:none}
+    @media(max-width:820px){ .grid{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <img id="logo" src="ASTRALIS.png" alt="logo">
+      <div>
+        <h1>ASTRALIS — Selección de flujo</h1>
+        <div class="sub">Elige cómo quieres obtener predicciones</div>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h3>🔎 Seleccionar datos de la base (TESS)</h3>
+        <p class="sub">Carga la base TESS (desde la NASA), selecciona filas y pide predicción para esas filas.</p>
+        <div style="margin-top:12px">
+          <button class="btn" onclick="location.href='base_TSS.html'">Ir a la base</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>⬆️ Subir datos manualmente</h3>
+        <p class="sub">Sube un CSV o pega JSON con tus datos y obtén predicciones sin pasar por la tabla.</p>
+        <div style="margin-top:12px">
+          <button class="btn" onclick="location.href='upload_predict.html'">Subir / Predecir</button>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <div>¿Quieres reentrenar? <a class="link" href="train_model.html">Ir a Entrenamiento</a></div>
+      <div style="color:#6ee7cf">Nota: asegúrate de tener corriendo server1.js (8080) y server.py (5000)</div>
+    </footer>
+  </div>
+</body>
+</html>

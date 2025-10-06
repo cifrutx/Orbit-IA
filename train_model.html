@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Entrenar modelo — ASTRALIS</title>
+  <style>
+    body{ font-family:Inter,Arial,Helvetica,sans-serif; background:linear-gradient(180deg,#071026,#071933); color:#e6eef6; margin:0; padding:18px;}
+    .card{ max-width:920px; margin:18px auto; background:rgba(255,255,255,0.02); padding:18px; border-radius:12px; border:1px solid rgba(255,255,255,0.03);}
+    h1{ margin:0 0 6px 0 }
+    label{ font-weight:700; display:block; margin-top:10px; color:#ffd7d7;}
+    input, select{ width:100%; padding:8px; border-radius:8px; margin-top:6px; background:#071026; color:#e6eef6; border:1px solid rgba(255,255,255,0.03); }
+    .btn{ margin-top:12px; padding:10px 14px; border-radius:10px; border:none; cursor:pointer; font-weight:800; background:#f6b24a; color:#071026; }
+    .btn.secondary{ background:#6ee7cf; }
+    pre{ background:#0b1220; padding:10px; border-radius:8px; color:#9be7d6; max-height:420px; overflow:auto;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Reentrenar modelo (Space)</h1>
+    <div class="hint">Usa un CSV o la selección guardada desde TESS.</div>
+
+    <label>Modelo a reentrenar:</label>
+    <select id="mLabel">
+      <option>RF - TESS (base)</option>
+      <option>RF - K2</option>
+      <option>RF - TASS</option>
+    </select>
+
+    <label>Archivo CSV:</label>
+    <input id="csvFile" type="file" accept=".csv">
+
+    <div style="margin-top:10px;color:#9aa6b2">O usa la selección guardada:</div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="trainSelBtn" class="btn">Entrenar con selección guardada</button>
+      <button id="viewSavedBtn" class="btn secondary">Ver selección guardada</button>
+    </div>
+
+    <label>Columna objetivo (y):</label>
+    <input id="targetCol" type="text" placeholder="ej. label">
+
+    <label>Número de árboles:</label>
+    <input id="nTrees" type="number" value="280">
+
+    <label>Nodos máximos:</label>
+    <input id="nNodes" type="number" value="150">
+
+    <label>Máxima profundidad:</label>
+    <input id="maxDepth" type="number" value="10">
+
+    <label>Tamaño test:</label>
+    <input id="testSize" type="number" step="0.05" value="0.2">
+
+    <button id="trainBtn" class="btn">Entrenar y Guardar (CSV)</button>
+    <button id="backBtn" class="btn secondary" onclick="window.location.href='base_TSS.html'">Volver</button>
+
+    <h3>Resultado:</h3>
+    <pre id="trainOut">—</pre>
+  </div>
+
+<script>
+const out = document.getElementById('trainOut');
+
+// Entrenar con CSV
+document.getElementById('trainBtn').addEventListener('click', async ()=>{
+  const file = document.getElementById('csvFile').files[0];
+  if(!file){ out.textContent='Selecciona un CSV'; return; }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('model_label', document.getElementById('mLabel').value);
+  fd.append('target_col', document.getElementById('targetCol').value);
+  fd.append('n_trees', document.getElementById('nTrees').value);
+  fd.append('n_nodes', document.getElementById('nNodes').value);
+  fd.append('max_depth', document.getElementById('maxDepth').value);
+  fd.append('test_size', document.getElementById('testSize').value);
+
+  out.textContent='Entrenando...';
+  const r = await fetch('http://127.0.0.1:5000/retrain',{method:'POST',body:fd});
+  const j = await r.json();
+  out.textContent = JSON.stringify(j,null,2);
+});
+
+// Ver selección guardada
+document.getElementById('viewSavedBtn').addEventListener('click', ()=>{
+  const saved = localStorage.getItem('tessSavedData');
+  if(!saved){ out.textContent='⚠️ No hay selección guardada.'; return; }
+  const data = JSON.parse(saved);
+  out.textContent=`✅ ${data.length} filas guardadas.\n\nEjemplo:\n${JSON.stringify(data[0],null,2)}`;
+});
+
+// Entrenar con selección guardada
+document.getElementById('trainSelBtn').addEventListener('click', async ()=>{
+  const saved = localStorage.getItem('tessSavedData');
+  if(!saved){ out.textContent='No hay selección guardada.'; return; }
+  const data = JSON.parse(saved);
+
+  const features = ['pl_eqt','pl_insol','pl_rade','st_rad','st_dist','pl_radeerr1','pl_radeerr2','pl_trandurh','pl_trandep','pl_tranmid','pl_tranmiderr1','pl_tranmiderr2','pl_trandurherr1','pl_trandurherr2','pl_orbper'];
+  const filtered = data.map((row,i)=>{const o={};features.forEach(f=>o[f]=Number(row[f])||0);o.label=i%2;return o;});
+
+  const csvHeader=[...features,'label'];
+  const csvRows=filtered.map(r=>csvHeader.map(h=>r[h]).join(','));
+  const blob=new Blob([[csvHeader.join(',')].concat(csvRows).join('\n')],{type:'text/csv'});
+
+  const fd=new FormData();
+  fd.append('file',blob,'selected_rows.csv');
+  fd.append('model_label',document.getElementById('mLabel').value);
+  fd.append('target_col','label');
+  fd.append('n_trees',document.getElementById('nTrees').value);
+  fd.append('n_nodes',document.getElementById('nNodes').value);
+  fd.append('max_depth',document.getElementById('maxDepth').value);
+  fd.append('test_size',document.getElementById('testSize').value);
+
+  out.textContent='Entrenando con selección guardada...';
+  const r=await fetch('http://127.0.0.1:5000/retrain',{method:'POST',body:fd});
+  const j=await r.json();
+  out.textContent=JSON.stringify(j,null,2);
+});
+</script>
+</body>
+</html>

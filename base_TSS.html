@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TESS DATA BASE — Selección</title>
+  <style>
+    :root{ --bg:#0b0f2a; --card:#0b1220; --accent:#f16406; --muted:#9aa6b2; }
+    body{ margin:0; font-family:Inter,Arial; background:linear-gradient(180deg,#071026,#071933); color:#e6eef6; }
+    header{ display:flex; align-items:center; justify-content:space-between; padding:14px 20px; background:linear-gradient(90deg, rgba(14,165,255,0.06), rgba(99,102,241,0.02)); border-bottom:1px solid rgba(255,255,255,0.05);}
+    #logo{ width:72px; height:72px; background:rgba(255,255,255,0.03); border-radius:12px; padding:8px; }
+    main{ max-width:1200px; margin:18px auto; padding:12px; }
+    .card{ background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.03); }
+    .filters{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+    .btn{ background:var(--accent); color:white; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:700; }
+    #tessTable{ margin-top:12px; color:var(--muted); max-height:420px; overflow:auto; border-radius:8px; }
+    table{ width:100%; border-collapse:collapse; font-size:13px; }
+    th, td{ padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.06); color:var(--muted); text-align:left; }
+    .predict-card{ margin-top:14px; padding:14px; border-radius:10px; background:rgba(255,255,255,0.02); }
+    pre.resultBox{ background:#0b1220; color:#9be7d6; padding:12px; border-radius:8px; max-height:360px; overflow:auto; }
+    label.small{ font-size:13px; color:var(--muted); }
+    input, select, textarea{ background:#071026; color:#e6eef6; border:1px solid rgba(255,255,255,0.03); padding:8px; border-radius:8px; }
+    footer{ margin-top:14px; color:#9aa6b2; font-size:13px; display:flex; justify-content:space-between; }
+    @media(max-width:920px){ header{ flex-direction:column; gap:8px } }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex; gap:12px; align-items:center;">
+      <img id="logo" src="ASTRALIS.png" alt="logo">
+      <div>
+        <h1 style="margin:0">TESS DATA BASE</h1>
+        <div class="small">Selecciona filas y pide predicción</div>
+      </div>
+    </div>
+    <nav>
+      <a href="index.html" style="color:#9ad1ff;text-decoration:none;margin-right:14px">Inicio</a>
+      <a href="train_model.html" style="color:#9ad1ff;text-decoration:none">Entrenar (opcional)</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="filters">
+        <button id="toggleColumns" class="btn">⚙️ Columnas</button>
+        <div>
+          <label class="small">Filas:</label>
+          <input id="rowLimit" type="number" min="1" value="20" style="width:90px;">
+        </div>
+        <button id="loadTessBtn" class="btn">Cargar DB</button>
+        <button id="loadAllBtn" class="btn">Mostrar todo</button>
+        <div>
+          <label class="small">Año:</label>
+          <select id="yearFilter"><option value="">Todos</option></select>
+        </div>
+        <button id="applyFilterBtn" class="btn">Aplicar</button>
+
+        <div style="margin-left:auto; display:flex; gap:8px;">
+          <button id="saveSelBtn" class="btn">Guardar selección</button>
+          <button id="exportCSV" class="btn">Descargar CSV</button>
+        </div>
+      </div>
+
+      <div id="columnPanel" style="display:none; margin-bottom:8px; padding:8px; background:rgba(255,255,255,0.02); border-radius:8px;"></div>
+      <div id="tessTable" class="small">Pulsa "Cargar DB" para empezar.</div>
+    </div>
+
+    <div class="card predict-card">
+      <h3 style="margin:0 0 8px 0">🔭 Predicciones desde filas seleccionadas</h3>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <label class="small">Modelo:</label>
+        <select id="modelSelect">
+          <option>RF - TESS (base)</option>
+          <option>RF - K2</option>
+          <option>RF - TASS</option>
+        </select>
+        <button id="obtenerResultadosBtn" class="btn">Obtener resultados de las filas seleccionadas</button>
+      </div>
+
+      <h4 style="margin-top:12px">Resultado:</h4>
+      <pre id="predictResult" class="resultBox">—</pre>
+    </div>
+
+    <footer>
+      <div>Recuerda: puedes guardar la selección y usarla en la página de entrenamiento.</div>
+      <div style="color:#6ee7cf">Servidor: 8080 (TESS) y 5000 (proxy predict)</div>
+    </footer>
+  </main>
+
+<script>
+  // columnas conocidas
+  const headers = [
+    'pl_name','hostname','disc_year','pl_orbper','pl_rade',
+    'pl_bmasse','st_teff','st_rad','st_mass','sy_dist',
+    'sy_snum','sy_pnum','sy_tmag','disc_facility','disc_telescope',
+    'pl_eqt','pl_insol','pl_radeerr1','pl_radeerr2',
+    'pl_trandurherr1','pl_trandurherr2','pl_trandurh',
+    'pl_trandep','pl_tranmid','pl_tranmiderr1','pl_tranmiderr2',
+    'st_dist'
+  ];
+  let planets = [], filteredPlanets = [];
+
+  const colPanel = document.getElementById('columnPanel');
+  headers.forEach(h => {
+    const el = document.createElement('label');
+    el.style.marginRight = '10px';
+    el.innerHTML = `<input type="checkbox" class="col-check" value="${h}" checked> ${h}`;
+    colPanel.appendChild(el);
+  });
+
+  document.getElementById('toggleColumns').addEventListener('click', ()=> {
+    colPanel.style.display = colPanel.style.display === 'none' ? 'block' : 'none';
+  });
+  colPanel.addEventListener('change', renderTable);
+
+  // Cargar TESS (tu server1.js)
+  document.getElementById('loadTessBtn').addEventListener('click', async () => {
+    const div = document.getElementById('tessTable');
+    div.innerHTML = "Cargando planetas TESS...";
+    try {
+      const url = "http://127.0.0.1:8080/tess";
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('Error al pedir /tess: ' + r.status);
+      const data = await r.json();
+      planets = data;
+      filteredPlanets = planets.slice();
+      fillYearFilter(planets);
+      renderTable();
+    } catch (err) {
+      div.innerHTML = `<p style="color:#ffb3b3">Error: ${err.message}</p>`;
+    }
+  });
+
+  document.getElementById('loadAllBtn').addEventListener('click', ()=> {
+    document.getElementById('rowLimit').value = planets.length || 999999;
+    renderTable();
+  });
+
+  document.getElementById('applyFilterBtn').addEventListener('click', ()=> {
+    const y = document.getElementById('yearFilter').value;
+    filteredPlanets = y ? planets.filter(p => String(p.disc_year) === String(y)) : planets.slice();
+    renderTable();
+  });
+
+  function fillYearFilter(data){
+    const select = document.getElementById('yearFilter');
+    const years = [...new Set(data.map(p => p.disc_year).filter(Boolean))].sort();
+    select.innerHTML = '<option value="">Todos</option>' + years.map(y=>`<option value="${y}">${y}</option>`).join('');
+  }
+
+  function renderTable(){
+    const div = document.getElementById('tessTable');
+    if (!filteredPlanets || !filteredPlanets.length) return div.innerHTML = "<p>No data loaded</p>";
+    const cols = Array.from(document.querySelectorAll('.col-check:checked')).map(cb=>cb.value);
+    const limit = Math.min(filteredPlanets.length, parseInt(document.getElementById('rowLimit').value) || filteredPlanets.length);
+    let html = '<table><thead><tr><th></th>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+    for (let i=0;i<limit;i++){
+      const p = filteredPlanets[i];
+      html += `<tr><td><input type="checkbox" class="row-select" data-index="${i}"></td>` + cols.map(c=>`<td>${escapeHtml(String(p[c] ?? '-'))}</td>`).join('') + '</tr>';
+    }
+    html += '</tbody></table>';
+    div.innerHTML = html;
+  }
+
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m])); }
+
+  // Guardar selección
+  document.getElementById('saveSelBtn').addEventListener('click', ()=> {
+    const selected = Array.from(document.querySelectorAll('.row-select:checked')).map(cb=>filteredPlanets[cb.dataset.index]);
+    if (!selected.length) return alert('No hay filas seleccionadas');
+    localStorage.setItem('tessSavedData', JSON.stringify(selected));
+    alert(`Guardadas ${selected.length} filas en localStorage.`);
+  });
+
+  // Export CSV
+  document.getElementById('exportCSV').addEventListener('click', ()=> {
+    const selected = Array.from(document.querySelectorAll('.row-select:checked')).map(cb=>filteredPlanets[cb.dataset.index]);
+    const cols = Array.from(document.querySelectorAll('.col-check:checked')).map(cb=>cb.value);
+    const data = selected.length ? selected : filteredPlanets;
+    const limit = parseInt(document.getElementById('rowLimit').value) || data.length;
+    const rows = data.slice(0, limit);
+    const csv = [cols.join(','), ...rows.map(r=>cols.map(h=>JSON.stringify(r[h] ?? '')).join(','))].join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'tess_export.csv'; a.click();
+  });
+
+  // Predicción: obtener filas seleccionadas y enviar solo columnas numéricas esperadas
+  document.getElementById('obtenerResultadosBtn').addEventListener('click', async ()=> {
+    const out = document.getElementById('predictResult');
+    out.textContent = 'Solicitando predicción...';
+    const modelLabel = document.getElementById('modelSelect').value;
+    const selected = Array.from(document.querySelectorAll('.row-select:checked')).map(cb=>filteredPlanets[cb.dataset.index]);
+    if (!selected.length) { alert('Selecciona filas para predecir'); out.textContent='Sin selección.'; return; }
+
+    const allowedKeys = [
+      "pl_eqt","pl_insol","pl_radeerr1","pl_rade",
+      "pl_trandurherr2","pl_radeerr2","pl_trandurherr1",
+      "pl_trandurh","pl_trandep","pl_tranmid","pl_orbper",
+      "pl_tranmiderr1","st_rad","pl_tranmiderr2","st_dist"
+    ];
+
+    const filteredData = selected.map(row=>{
+      const out = {};
+      allowedKeys.forEach(k => out[k] = (row[k] !== undefined ? row[k] : null));
+      return out;
+    });
+
+    try {
+      const r = await fetch('http://127.0.0.1:5000/predict', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ model_label: modelLabel, data: filteredData })
+      });
+      const j = await r.json();
+      // mostrar tabla si viene prediction array
+      if (j && j.prediction) {
+        out.innerHTML = formatPredictTable(filteredData, j);
+      } else {
+        out.textContent = JSON.stringify(j, null, 2);
+      }
+    } catch (e) {
+      out.textContent = 'Error: ' + (e.message || e);
+    }
+  });
+
+  function formatPredictTable(rows, resp){
+    const preds = resp.prediction || [];
+    const probs = resp.probabilities || [];
+    const cols = Object.keys(rows[0] || {});
+    let html = '<div style="overflow:auto"><table><thead><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '<th>prediction</th><th>probabilities</th></tr></thead><tbody>';
+    for (let i=0;i<rows.length;i++){
+      html += '<tr>' + cols.map(c=>`<td>${escapeHtml(String(rows[i][c] ?? '-'))}</td>`).join('') + `<td>${escapeHtml(String(preds[i] ?? '-'))}</td><td>${escapeHtml(JSON.stringify(probs[i] ?? '-'))}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  // Cargar selección previa (para UX)
+  window.addEventListener('load', ()=>{
+    const selModel = localStorage.getItem('selectedModelLabel');
+    if (selModel) document.getElementById('modelSelect').value = selModel;
+    const saved = localStorage.getItem('tessSavedData');
+    if (saved) window.tessSavedData = JSON.parse(saved);
+  });
+</script>
+</body>
+</html>
